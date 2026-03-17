@@ -52,6 +52,17 @@ if not df_f.empty:
     lucro_total = df_f['profit_loss'].sum()
     win_rate = (len(df_f[df_f['profit_loss'] > 0]) / len(df_f) * 100)
 
+    # --- NOVO: LÓGICA DE SALDO (BI GESTÃO) ---
+    # Identifica trades de COMPRA que ainda não tiveram uma VENDA correspondente (Posições Abertas)
+    compras = df_f[df_f['type'].str.contains('BUY')]
+    vendas = df_f[df_f['type'].str.contains('SELL')]
+    num_posicoes_abertas = len(compras) - len(vendas)
+    
+    # Saldo Simulado Inicial de $100.00 (conforme seu script do bot)
+    SALDO_INICIAL = 100.0
+    VALOR_POR_TRADE = 10.0
+    saldo_usdt_estimado = SALDO_INICIAL - (num_posicoes_abertas * VALOR_POR_TRADE) + lucro_total
+
     # --- ALERTA DE META (GAMIFICAÇÃO) ---
     META_LUCRO = 10.0
     if lucro_total >= META_LUCRO:
@@ -59,8 +70,12 @@ if not df_f.empty:
         st.success(f"🏆 META ATINGIDA! Você ultrapassou ${META_LUCRO:.2f} de lucro acumulado!")
 
     # --- KPIs Dinâmicos ---
-    c1, c2, c3, c4 = st.columns(4)
+    c_saldo, c1, c2, c3, c4 = st.columns(5) # Adicionada coluna para o saldo
     
+    # KPI NOVO: Saldo Estimado
+    c_saldo.metric("Saldo Estimado", f"${saldo_usdt_estimado:.2f}", 
+                   help="Saldo simulado restante baseado em $100 iniciais e posições abertas.")
+
     c1.metric("Lucro Total", f"${lucro_total:.2f}", 
               delta=f"{lucro_total:.2f}", delta_color="normal")
     
@@ -90,7 +105,7 @@ if not df_f.empty:
                                  template="plotly_dark")
         st.plotly_chart(fig_scatter, use_container_width=True)
 
-    # --- NOVO: RANKING DE MOEDAS ---
+    # --- RANKING DE MOEDAS ---
     st.subheader("🏆 Ranking de Performance por Ativo")
     ranking_df = df.groupby('symbol')['profit_loss'].sum().reset_index()
     ranking_df = ranking_df.sort_values(by='profit_loss', ascending=False)
