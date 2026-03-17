@@ -18,6 +18,8 @@ st.set_page_config(page_title="BI Trading Bot Pro", layout="wide", initial_sideb
 # Puxa a URL das Secrets do Streamlit Cloud
 DB_URL = st.secrets["DB_URL"]
 
+# O parâmetro ttl=30 garante que o Streamlit busque novos dados no Neon a cada 30s
+@st.cache_data(ttl=30)
 def load_data():
     try:
         conn = psycopg2.connect(DB_URL)
