@@ -45,6 +45,7 @@ st.title("📊 BI Trading Bot - Analytics Pro")
 
 if not df_f.empty:
     # --- CÁLCULOS DE BI ---
+    df_f['timestamp'] = pd.to_datetime(df_f['timestamp'])
     df_bench = df_f.sort_values('timestamp')
     preco_inicial = df_bench.iloc[0]['price']
     preco_atual = df_bench.iloc[-1]['price']
@@ -76,7 +77,7 @@ if not df_f.empty:
 
     st.divider()
     
-    # --- GRÁFICOS DE PERFORMANCE ---
+    # --- LINHA 1: EVOLUÇÃO E VOLUME ---
     col_left, col_right = st.columns(2)
     with col_left:
         df_bench['Acumulado'] = df_bench['profit_loss'].cumsum()
@@ -88,33 +89,40 @@ if not df_f.empty:
         fig_scatter = px.scatter(df_f, x='volume_ratio', y='profit_loss', color='symbol', size='amount', title="📈 Volume vs Resultado ($)", template="plotly_dark")
         st.plotly_chart(fig_scatter, use_container_width=True)
 
-    # --- NOVO: RANKING E TEMPO DE ESPERA ---
+    # --- LINHA 2: RANKING E TEMPO DE ESPERA ---
     col_rank, col_wait = st.columns(2)
-    
     with col_rank:
         st.subheader("🏆 Ranking por Ativo")
-        ranking_df = df.groupby('symbol')['profit_loss'].sum().reset_index().sort_values(by='profit_loss', ascending=False)
+        ranking_df = df_f.groupby('symbol')['profit_loss'].sum().reset_index().sort_values(by='profit_loss', ascending=False)
         fig_ranking = px.bar(ranking_df, x='symbol', y='profit_loss', color='profit_loss', color_continuous_scale='GnBu', template="plotly_dark")
         st.plotly_chart(fig_ranking, use_container_width=True)
 
     with col_wait:
-        st.subheader("🕒 Tempo Médio de Espera (Min)")
-        # Lógica para calcular a duração entre BUY e SELL com o mesmo ID
-        buy_data = df[df['type'].str.contains('BUY')][['trade_id', 'timestamp', 'symbol']]
-        sell_data = df[df['type'].str.contains('SELL')][['trade_id', 'timestamp']]
-        
+        st.subheader("🕒 Hold Time Médio (Min)")
+        buy_data = df_f[df_f['type'].str.contains('BUY')][['trade_id', 'timestamp', 'symbol']]
+        sell_data = df_f[df_f['type'].str.contains('SELL')][['trade_id', 'timestamp']]
         trades_completos = pd.merge(buy_data, sell_data, on='trade_id', suffixes=('_in', '_out'))
         if not trades_completos.empty:
-            trades_completos['timestamp_in'] = pd.to_datetime(trades_completos['timestamp_in'])
-            trades_completos['timestamp_out'] = pd.to_datetime(trades_completos['timestamp_out'])
             trades_completos['espera_min'] = (trades_completos['timestamp_out'] - trades_completos['timestamp_in']).dt.total_seconds() / 60
-            
             wait_df = trades_completos.groupby('symbol')['espera_min'].mean().reset_index()
-            fig_wait = px.bar(wait_df, x='symbol', y='espera_min', title="Hold Time Médio por Moeda", template="plotly_dark")
+            fig_wait = px.bar(wait_df, x='symbol', y='espera_min', template="plotly_dark")
             fig_wait.update_traces(marker_color='#FFA500')
             st.plotly_chart(fig_wait, use_container_width=True)
         else:
-            st.info("Aguardando o fechamento do primeiro trade para calcular o tempo de espera.")
+            st.info("Aguardando fechamento de trades.")
+
+    # --- LINHA 3 (NOVA): EFICIÊNCIA POR HORÁRIO ---
+    st.subheader("⏰ Eficiência por Horário do Dia")
+    df_f['hour'] = df_f['timestamp'].dt.hour
+    hour_df = df_f.groupby('hour')['profit_loss'].sum().reset_index().sort_values('hour')
+    
+    fig_hour = px.bar(hour_df, x='hour', y='profit_loss', 
+                      title="Lucro Acumulado por Hora (UTC)",
+                      labels={'hour': 'Hora do Dia', 'profit_loss': 'Lucro ($)'},
+                      color='profit_loss', color_continuous_scale='Bluered',
+                      template="plotly_dark")
+    fig_hour.update_layout(xaxis=dict(tickmode='linear', tick0=0, dtick=1))
+    st.plotly_chart(fig_hour, use_container_width=True)
 
     with st.expander("📝 Visualizar Histórico Completo"):
         st.dataframe(df_f, use_container_width=True)
