@@ -21,7 +21,19 @@ def load_data():
     except Exception as e:
         return pd.DataFrame()
 
+# Função para carregar rejeições do banco
+@st.cache_data(ttl=30)
+def load_rejections():
+    try:
+        conn = psycopg2.connect(DB_URL)
+        df_rej = pd.read_sql("SELECT * FROM rejections ORDER BY timestamp DESC LIMIT 20", conn)
+        conn.close()
+        return df_rej
+    except:
+        return pd.DataFrame()
+
 df = load_data()
+df_rej = load_rejections()
 
 # --- SIDEBAR (FILTROS) ---
 st.sidebar.title("🤖 Bot Control")
@@ -103,7 +115,7 @@ if not df_f.empty:
         sell_data = df_f[df_f['type'].str.contains('SELL')][['trade_id', 'timestamp']]
         trades_completos = pd.merge(buy_data, sell_data, on='trade_id', suffixes=('_in', '_out'))
         if not trades_completos.empty:
-            trades_completos['espera_min'] = (trades_completos['timestamp_out'] - trades_completos['timestamp_in']).dt.total_seconds() / 60
+            trades_completos['espera_min'] = (pd.to_datetime(trades_completos['timestamp_out']) - pd.to_datetime(trades_completos['timestamp_in'])).dt.total_seconds() / 60
             wait_df = trades_completos.groupby('symbol')['espera_min'].mean().reset_index()
             fig_wait = px.bar(wait_df, x='symbol', y='espera_min', template="plotly_dark")
             fig_wait.update_traces(marker_color='#FFA500')
@@ -111,18 +123,25 @@ if not df_f.empty:
         else:
             st.info("Aguardando fechamento de trades.")
 
-    # --- LINHA 3 (NOVA): EFICIÊNCIA POR HORÁRIO ---
-    st.subheader("⏰ Eficiência por Horário do Dia")
-    df_f['hour'] = df_f['timestamp'].dt.hour
-    hour_df = df_f.groupby('hour')['profit_loss'].sum().reset_index().sort_values('hour')
+    # --- LINHA 3: EFICIÊNCIA E REJEIÇÕES ---
+    col_hour, col_rej = st.columns(2)
     
-    fig_hour = px.bar(hour_df, x='hour', y='profit_loss', 
-                      title="Lucro Acumulado por Hora (UTC)",
-                      labels={'hour': 'Hora do Dia', 'profit_loss': 'Lucro ($)'},
-                      color='profit_loss', color_continuous_scale='Bluered',
-                      template="plotly_dark")
-    fig_hour.update_layout(xaxis=dict(tickmode='linear', tick0=0, dtick=1))
-    st.plotly_chart(fig_hour, use_container_width=True)
+    with col_hour:
+        st.subheader("⏰ Lucro por Horário (UTC)")
+        df_f['hour'] = df_f['timestamp'].dt.hour
+        hour_df = df_f.groupby('hour')['profit_loss'].sum().reset_index().sort_values('hour')
+        fig_hour = px.bar(hour_df, x='hour', y='profit_loss', color='profit_loss', color_continuous_scale='Bluered', template="plotly_dark")
+        fig_hour.update_layout(xaxis=dict(tickmode='linear', tick0=0, dtick=1))
+        st.plotly_chart(fig_hour, use_container_width=True)
+
+    with col_rej:
+        st.subheader("🚫 Quase-Trades (Barrados por Volume)")
+        if not df_rej.empty:
+            st.dataframe(df_rej[['timestamp', 'symbol', 'volume_ratio']], use_container_width=True)
+            avg_rej = df_rej['volume_ratio'].mean()
+            st.caption(f"Média de Volume das Rejeições: {avg_rej:.2f}x (Alvo: 1.30x)")
+        else:
+            st.info("Nenhuma rejeição registrada ainda.")
 
     with st.expander("📝 Visualizar Histórico Completo"):
         st.dataframe(df_f, use_container_width=True)
