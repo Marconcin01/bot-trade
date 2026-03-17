@@ -6,8 +6,7 @@ import plotly.express as px
 # Configuração da página
 st.set_page_config(page_title="BI Trading Bot - Neon Cloud", layout="wide")
 
-# URL de Conexão (A mesma que você usa no Bot)
-DB_URL = "postgresql://neondb_owner:npg_2t3FIQBjDpYy@ep-little-fog-acfpo5sw-pooler.sa-east-1.aws.neon.tech/neondb?sslmode=require"
+DB_URL = st.secrets["DB_URL"]
 
 def load_data():
     try:
