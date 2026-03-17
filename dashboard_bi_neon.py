@@ -44,7 +44,7 @@ else:
 st.title("📊 BI Trading Bot - Analytics Pro")
 
 if not df_f.empty:
-    # Cálculos
+    # --- CÁLCULOS DE BI ---
     df_bench = df_f.sort_values('timestamp')
     preco_inicial = df_bench.iloc[0]['price']
     preco_atual = df_bench.iloc[-1]['price']
@@ -52,68 +52,69 @@ if not df_f.empty:
     lucro_total = df_f['profit_loss'].sum()
     win_rate = (len(df_f[df_f['profit_loss'] > 0]) / len(df_f) * 100)
 
-    # --- NOVO: LÓGICA DE SALDO (BI GESTÃO) ---
-    # Identifica trades de COMPRA que ainda não tiveram uma VENDA correspondente (Posições Abertas)
+    # Lógica de Saldo Estimado
     compras = df_f[df_f['type'].str.contains('BUY')]
     vendas = df_f[df_f['type'].str.contains('SELL')]
     num_posicoes_abertas = len(compras) - len(vendas)
-    
-    # Saldo Simulado Inicial de $100.00 (conforme seu script do bot)
     SALDO_INICIAL = 100.0
     VALOR_POR_TRADE = 10.0
     saldo_usdt_estimado = SALDO_INICIAL - (num_posicoes_abertas * VALOR_POR_TRADE) + lucro_total
 
-    # --- ALERTA DE META (GAMIFICAÇÃO) ---
+    # --- ALERTA DE META ---
     META_LUCRO = 10.0
     if lucro_total >= META_LUCRO:
         st.balloons()
         st.success(f"🏆 META ATINGIDA! Você ultrapassou ${META_LUCRO:.2f} de lucro acumulado!")
 
     # --- KPIs Dinâmicos ---
-    c_saldo, c1, c2, c3, c4 = st.columns(5) # Adicionada coluna para o saldo
-    
-    # KPI NOVO: Saldo Estimado
-    c_saldo.metric("Saldo Estimado", f"${saldo_usdt_estimado:.2f}", 
-                   help="Saldo simulado restante baseado em $100 iniciais e posições abertas.")
-
-    c1.metric("Lucro Total", f"${lucro_total:.2f}", 
-              delta=f"{lucro_total:.2f}", delta_color="normal")
-    
-    c2.metric("Market Performance", f"{retorno_mercado:.2f}%", 
-              help="Variação do preço desde o início dos registros.")
-    
+    c_saldo, c1, c2, c3, c4 = st.columns(5)
+    c_saldo.metric("Saldo Estimado", f"${saldo_usdt_estimado:.2f}")
+    c1.metric("Lucro Total", f"${lucro_total:.2f}", delta=f"{lucro_total:.2f}")
+    c2.metric("Market Performance", f"{retorno_mercado:.2f}%")
     c3.metric("Win Rate", f"{win_rate:.1f}%")
-    
     c4.metric("Avg. Vol Ratio", f"{df_f['volume_ratio'].mean():.2f}x")
 
     st.divider()
     
-    # --- GRÁFICOS ---
+    # --- GRÁFICOS DE PERFORMANCE ---
     col_left, col_right = st.columns(2)
-    
     with col_left:
         df_bench['Acumulado'] = df_bench['profit_loss'].cumsum()
-        fig_evolucao = px.line(df_bench, x='timestamp', y='Acumulado', 
-                               title="💰 Evolução do Lucro ($)", 
-                               template="plotly_dark")
+        fig_evolucao = px.line(df_bench, x='timestamp', y='Acumulado', title="💰 Evolução do Lucro ($)", template="plotly_dark")
         fig_evolucao.update_traces(line_color='#00FFCC')
         st.plotly_chart(fig_evolucao, use_container_width=True)
         
     with col_right:
-        fig_scatter = px.scatter(df_f, x='volume_ratio', y='profit_loss', color='symbol',
-                                 size='amount', title="📈 Volume vs Resultado ($)",
-                                 template="plotly_dark")
+        fig_scatter = px.scatter(df_f, x='volume_ratio', y='profit_loss', color='symbol', size='amount', title="📈 Volume vs Resultado ($)", template="plotly_dark")
         st.plotly_chart(fig_scatter, use_container_width=True)
 
-    # --- RANKING DE MOEDAS ---
-    st.subheader("🏆 Ranking de Performance por Ativo")
-    ranking_df = df.groupby('symbol')['profit_loss'].sum().reset_index()
-    ranking_df = ranking_df.sort_values(by='profit_loss', ascending=False)
+    # --- NOVO: RANKING E TEMPO DE ESPERA ---
+    col_rank, col_wait = st.columns(2)
     
-    fig_ranking = px.bar(ranking_df, x='symbol', y='profit_loss', 
-                         color='profit_loss', color_continuous_scale='GnBu',
-                         title="Comparativo de Lucro entre Moedas ($)", template="plotly_dark")
-    st.plotly_chart(fig_ranking, use_container_width=True)
+    with col_rank:
+        st.subheader("🏆 Ranking por Ativo")
+        ranking_df = df.groupby('symbol')['profit_loss'].sum().reset_index().sort_values(by='profit_loss', ascending=False)
+        fig_ranking = px.bar(ranking_df, x='symbol', y='profit_loss', color='profit_loss', color_continuous_scale='GnBu', template="plotly_dark")
+        st.plotly_chart(fig_ranking, use_container_width=True)
+
+    with col_wait:
+        st.subheader("🕒 Tempo Médio de Espera (Min)")
+        # Lógica para calcular a duração entre BUY e SELL com o mesmo ID
+        buy_data = df[df['type'].str.contains('BUY')][['trade_id', 'timestamp', 'symbol']]
+        sell_data = df[df['type'].str.contains('SELL')][['trade_id', 'timestamp']]
+        
+        trades_completos = pd.merge(buy_data, sell_data, on='trade_id', suffixes=('_in', '_out'))
+        if not trades_completos.empty:
+            trades_completos['timestamp_in'] = pd.to_datetime(trades_completos['timestamp_in'])
+            trades_completos['timestamp_out'] = pd.to_datetime(trades_completos['timestamp_out'])
+            trades_completos['espera_min'] = (trades_completos['timestamp_out'] - trades_completos['timestamp_in']).dt.total_seconds() / 60
+            
+            wait_df = trades_completos.groupby('symbol')['espera_min'].mean().reset_index()
+            fig_wait = px.bar(wait_df, x='symbol', y='espera_min', title="Hold Time Médio por Moeda", template="plotly_dark")
+            fig_wait.update_traces(marker_color='#FFA500')
+            st.plotly_chart(fig_wait, use_container_width=True)
+        else:
+            st.info("Aguardando o fechamento do primeiro trade para calcular o tempo de espera.")
 
     with st.expander("📝 Visualizar Histórico Completo"):
         st.dataframe(df_f, use_container_width=True)
