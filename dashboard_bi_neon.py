@@ -52,21 +52,23 @@ if not df_f.empty:
     lucro_total = df_f['profit_loss'].sum()
     win_rate = (len(df_f[df_f['profit_loss'] > 0]) / len(df_f) * 100)
 
+    # --- ALERTA DE META (GAMIFICAÇÃO) ---
+    META_LUCRO = 10.0
+    if lucro_total >= META_LUCRO:
+        st.balloons()
+        st.success(f"🏆 META ATINGIDA! Você ultrapassou ${META_LUCRO:.2f} de lucro acumulado!")
+
     # --- KPIs Dinâmicos ---
     c1, c2, c3, c4 = st.columns(4)
     
-    # KPI 1: Lucro com cor dinâmica
     c1.metric("Lucro Total", f"${lucro_total:.2f}", 
               delta=f"{lucro_total:.2f}", delta_color="normal")
     
-    # KPI 2: Benchmark
     c2.metric("Market Performance", f"{retorno_mercado:.2f}%", 
               help="Variação do preço desde o início dos registros.")
     
-    # KPI 3: Win Rate
     c3.metric("Win Rate", f"{win_rate:.1f}%")
     
-    # KPI 4: Volume
     c4.metric("Avg. Vol Ratio", f"{df_f['volume_ratio'].mean():.2f}x")
 
     st.divider()
@@ -88,9 +90,19 @@ if not df_f.empty:
                                  template="plotly_dark")
         st.plotly_chart(fig_scatter, use_container_width=True)
 
+    # --- NOVO: RANKING DE MOEDAS ---
+    st.subheader("🏆 Ranking de Performance por Ativo")
+    ranking_df = df.groupby('symbol')['profit_loss'].sum().reset_index()
+    ranking_df = ranking_df.sort_values(by='profit_loss', ascending=False)
+    
+    fig_ranking = px.bar(ranking_df, x='symbol', y='profit_loss', 
+                         color='profit_loss', color_continuous_scale='GnBu',
+                         title="Comparativo de Lucro entre Moedas ($)", template="plotly_dark")
+    st.plotly_chart(fig_ranking, use_container_width=True)
+
     with st.expander("📝 Visualizar Histórico Completo"):
         st.dataframe(df_f, use_container_width=True)
 else:
     st.info("Aguardando dados para gerar o dashboard...")
 
-st.caption(f"Última atualização: {datetime.now().strftime('%H:%M:%S')}")
+st.caption(f"Última atualização: {datetime.now().strftime('%H:%M:%S')} | Conectado ao Neon Cloud")
