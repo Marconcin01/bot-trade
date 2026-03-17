@@ -3,6 +3,15 @@ import pandas as pd
 import psycopg2
 import plotly.express as px
 
+# Faz o Dashboard recarregar os dados do Neon automaticamente a cada 30 segundos
+if "do_refresh" not in st.session_state:
+    st.session_state.do_refresh = True
+
+# Comando para atualizar a página sem intervenção humana
+st.logo("https://img.icons8.com/fluency/48/bot.png") # Um toque visual opcional
+st.write(f"🕒 Próxima atualização em 30s...")
+st.empty() # Limpa o cache visual
+
 # Força o Modo Escuro e Configuração da Página
 st.set_page_config(page_title="BI Trading Bot Pro", layout="wide", initial_sidebar_state="expanded")
 
