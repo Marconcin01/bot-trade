@@ -2,10 +2,16 @@ import streamlit as st
 import pandas as pd
 import psycopg2
 import plotly.express as px
-from datetime import datetime
 
-# Configuração Pro
-st.set_page_config(page_title="BI Trading Bot - Benchmark", layout="wide")
+# 1. Configuração de Página (Deve ser o primeiro comando Streamlit)
+st.set_page_config(page_title="BI Trading Bot Pro", layout="wide", initial_sidebar_state="expanded")
+
+# 2. Sistema de Auto-Refresh (30 segundos)
+if "do_refresh" not in st.session_state:
+    st.session_state.do_refresh = True
+st.sidebar.write(f"🕒 Atualização automática: Ativa (30s)")
+
+# 3. Conexão e Carga de Dados
 DB_URL = st.secrets["DB_URL"]
 
 @st.cache_data(ttl=30)
@@ -16,51 +22,78 @@ def load_data():
         df = pd.read_sql(query, conn)
         conn.close()
         return df
-    except:
+    except Exception as e:
+        st.error(f"Erro na conexão Neon: {e}")
         return pd.DataFrame()
 
 df = load_data()
 
-# --- SIDEBAR ---
-st.sidebar.header("🎯 Filtros")
-moeda_sel = st.sidebar.selectbox("Escolha o Ativo:", ["Todas"] + list(df['symbol'].unique()) if not df.empty else ["Aguardando..."])
-
-# --- DASHBOARD ---
-st.title("📊 BI Trading: Bot vs. Mercado (Buy & Hold)")
+# --- SIDEBAR (FILTROS) ---
+st.sidebar.logo("https://img.icons8.com/fluency/48/bot.png")
+st.sidebar.header("🎯 Filtros de Análise")
 
 if not df.empty:
-    # Lógica de Benchmark
-    df_bench = df.sort_values('timestamp')
+    lista_moedas = ["Todas"] + list(df['symbol'].unique())
+    moeda_sel = st.sidebar.selectbox("Escolha o Ativo:", lista_moedas)
+    modo_sel = st.sidebar.radio("Modo de Operação:", ["Todos", "SIMULADO", "REAL"])
+
+    # Aplicação dos Filtros
+    df_f = df.copy()
     if moeda_sel != "Todas":
-        df_bench = df_bench[df_bench['symbol'] == moeda_sel]
-    
-    # Preço inicial (Primeira compra) vs Preço final (Último trade)
+        df_f = df_f[df_f['symbol'] == moeda_sel]
+    if modo_sel != "Todos":
+        df_f = df_f[df_f['mode'] == modo_sel]
+else:
+    df_f = df
+
+# --- DASHBOARD PRINCIPAL ---
+st.title("📊 BI Trading Bot - Analytics Pro")
+
+if not df_f.empty:
+    # --- CÁLCULO DE BENCHMARK ---
+    df_bench = df_f.sort_values('timestamp')
     preco_inicial = df_bench.iloc[0]['price']
     preco_atual = df_bench.iloc[-1]['price']
     retorno_mercado = ((preco_atual - preco_inicial) / preco_inicial) * 100
-    lucro_bot = df_bench['profit_loss'].sum()
+    lucro_total = df_f['profit_loss'].sum()
 
-    # --- KPIs de Comparação ---
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Lucro do Bot ($)", f"${lucro_bot:.2f}", delta=f"{lucro_bot:.2f}")
-    c2.metric("Variação do Ativo (%)", f"{retorno_mercado:.2f}%", help="Quanto a moeda subiu/desceu desde o seu primeiro trade.")
+    # --- KPIs Dinâmicos ---
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Lucro Total", f"${lucro_total:.2f}", delta=f"{lucro_total:.2f}")
     
-    status_bot = "🔥 Superando o Mercado" if lucro_bot > (retorno_mercado/100) else "📉 Abaixo do Benchmark"
-    c3.subheader(f"Status: {status_bot}")
+    # KPI de Benchmark com cor dinâmica
+    c2.metric("Market Performance", f"{retorno_mercado:.2f}%", 
+              help="Variação do preço do ativo desde a primeira operação registrada.")
+    
+    c3.metric("Win Rate", f"{(len(df_f[df_f['profit_loss'] > 0]) / len(df_f) * 100):.1f}%")
+    c4.metric("Avg. Vol Ratio", f"{df_f['volume_ratio'].mean():.2f}x")
 
     st.divider()
-
-    # --- Gráfico de Comparação ---
-    df_bench['Acumulado_Bot'] = df_bench['profit_loss'].cumsum()
-    df_bench['Performance_Ativo'] = ((df_bench['price'] - preco_inicial) / preco_inicial) * 100
     
-    st.subheader(f"📈 Curva de Performance: {moeda_sel}")
-    fig = px.line(df_bench, x='timestamp', y=['Acumulado_Bot', 'Performance_Ativo'],
-                  labels={'value': 'Resultado', 'variable': 'Métrica'},
-                  template="plotly_dark", title="Lucro do Bot ($) vs Variação do Ativo (%)")
-    st.plotly_chart(fig, use_container_width=True)
+    # --- GRÁFICOS ---
+    col_left, col_right = st.columns(2)
+    
+    with col_left:
+        # Evolução do Patrimônio
+        df_bench['Acumulado'] = df_bench['profit_loss'].cumsum()
+        fig_evolucao = px.line(df_bench, x='timestamp', y='Acumulado', 
+                               title="💰 Evolução do Lucro Acumulado ($)", 
+                               template="plotly_dark", markers=True)
+        fig_evolucao.update_traces(line_color='#00ffcc')
+        st.plotly_chart(fig_evolucao, use_container_width=True)
+        
+    with col_right:
+        # Scatter Plot de Volume
+        fig_scatter = px.scatter(df_f, x='volume_ratio', y='profit_loss', color='symbol',
+                                 size='amount', title="📈 Volume Anômalo vs Resultado ($)",
+                                 template="plotly_dark", hover_data=['price'])
+        st.plotly_chart(fig_scatter, use_container_width=True)
 
-    st.dataframe(df_bench[['timestamp', 'symbol', 'price', 'profit_loss', 'Acumulado_Bot']], use_container_width=True)
-
+    # --- TABELA DE DADOS ---
+    with st.expander("📝 Visualizar Histórico Completo de Trades"):
+        st.dataframe(df_f, use_container_width=True)
 else:
-    st.warning("Aguardando mais dados de trades para calcular o Benchmark...")
+    st.info("Aguardando novos dados do bot para gerar o dashboard...")
+
+# Rodapé técnico
+st.caption(f"Conectado ao Neon PostgreSQL | Última atualização: {datetime.now().strftime('%H:%M:%S')}")
